@@ -21,6 +21,8 @@ body { font-family:'Pretendard',-apple-system,BlinkMacSystemFont,'Segoe UI',sans
 .tab-bar { display:flex; gap:4px; padding:12px 24px 0; border-bottom:1px solid var(--line); background:#fff; position:sticky; top:52px; z-index:90; flex-wrap:wrap; }
 .tab { background:none; border:none; border-bottom:2px solid transparent; padding:8px 15px 10px; font-size:14px; font-weight:600; color:var(--ink-soft); cursor:pointer; font-family:inherit; }
 .tab:hover { color:var(--accent); } .tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+.agi-subtab { background:none; border:none; border-bottom:2px solid transparent; padding:8px 15px 10px; font-size:13.5px; font-weight:600; color:var(--ink-soft); cursor:pointer; font-family:inherit; }
+.agi-subtab:hover { color:var(--accent); } .agi-subtab.active { color:var(--accent); border-bottom-color:var(--accent); }
 .content { max-width:1000px; margin:0 auto; padding:20px 24px 60px; }
 .view { display:none; } .view.active { display:block; }
 .form-card { background:#f8fafc; border:1px solid var(--line); border-radius:12px; padding:20px; }
@@ -172,9 +174,7 @@ body { font-family:'Pretendard',-apple-system,BlinkMacSystemFont,'Segoe UI',sans
   <button class="tab" data-tab="faq">💬 FAQ</button>
   <button class="tab" data-tab="ref">📝 참고사항</button>
   <button class="tab" data-tab="unisearch">🔎 통합검색</button>
-  <button class="tab" data-tab="contacts">☎ 대표 소통담당자</button>
-  <button class="tab" data-tab="agencylist">🏪 대리점 통합(연락처·제품·설치처)</button>
-  <button class="tab" data-tab="userlist">🗂 AFIAS 사용자 리스트</button>
+  <button class="tab" data-tab="agencyinfo">📇 대리점·사용자 정보</button>
 </div>
 
 <div class="content">
@@ -390,31 +390,37 @@ body { font-family:'Pretendard',-apple-system,BlinkMacSystemFont,'Segoe UI',sans
     <div id="uniSearchBody"></div>
   </div>
 
-  <!-- 대표 소통담당자 -->
-  <div class="view" id="view-contacts">
-    <div class="toolbar"><input id="contactsSearch" placeholder="대리점명·담당자명·연락처 검색 후 Enter" style="flex:1;"></div>
-    <div class="g-sub" id="contactsMeta" style="font-size:11.5px;color:#9ca3af;margin-bottom:8px;"></div>
-    <div class="table-scroll"><table class="wk-table" id="contactsTable"></table></div>
-  </div>
-
-  <!-- 대리점 리스트 -->
-  <div class="view" id="view-agencylist">
-    <div class="toolbar"><input id="agencySearch" placeholder="대리점명·영업담당자·담당자·연락처·취급제품·설치 병원명 검색 후 Enter" style="flex:1;"></div>
-    <div class="g-sub" id="agencyMeta" style="font-size:11.5px;color:#9ca3af;margin-bottom:8px;"></div>
-    <div class="table-scroll"><table class="wk-table" id="agencyTable"></table></div>
-  </div>
-
-  <!-- AFIAS 사용자 리스트 -->
-  <div class="view" id="view-userlist">
-    <div class="toolbar">
-      <input id="userlistSearch" placeholder="병원명·지역·대리점·장비·사용항목 검색 후 Enter" style="flex:1;">
-      <select id="userlistMode" onchange="renderUserlist()" style="margin-left:8px;">
-        <option value="full">전체 리스트</option>
-        <option value="ext">대표 외부용(Top)</option>
-      </select>
+  <!-- 대리점·사용자 정보 (대표 소통담당자 + 대리점 리스트 + AFIAS 사용자 리스트) -->
+  <div class="view" id="view-agencyinfo">
+    <div style="display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line);flex-wrap:wrap;">
+      <button class="agi-subtab active" data-agi="contacts" onclick="switchAgiSub('contacts')">☎ 대표 소통담당자</button>
+      <button class="agi-subtab" data-agi="agencylist" onclick="switchAgiSub('agencylist')">🏪 대리점 리스트</button>
+      <button class="agi-subtab" data-agi="userlist" onclick="switchAgiSub('userlist')">🗂 AFIAS 사용자 리스트</button>
     </div>
-    <div class="g-sub" id="userlistMeta" style="font-size:11.5px;color:#9ca3af;margin-bottom:8px;"></div>
-    <div class="table-scroll" style="max-height:600px;"><table class="wk-table" id="userlistTable"></table></div>
+
+    <div class="agi-pane" id="agi-contacts">
+      <div class="toolbar"><input id="contactsSearch" placeholder="대리점명·담당자명·연락처 검색 후 Enter" style="flex:1;"></div>
+      <div class="g-sub" id="contactsMeta" style="font-size:11.5px;color:#9ca3af;margin-bottom:8px;"></div>
+      <div class="table-scroll"><table class="wk-table" id="contactsTable"></table></div>
+    </div>
+
+    <div class="agi-pane" id="agi-agencylist" style="display:none;">
+      <div class="toolbar"><input id="agencySearch" placeholder="대리점명·영업담당자·취급제품 검색 후 Enter" style="flex:1;"></div>
+      <div class="g-sub" id="agencyMeta" style="font-size:11.5px;color:#9ca3af;margin-bottom:8px;"></div>
+      <div class="table-scroll"><table class="wk-table" id="agencyTable"></table></div>
+    </div>
+
+    <div class="agi-pane" id="agi-userlist" style="display:none;">
+      <div class="toolbar">
+        <input id="userlistSearch" placeholder="병원명·지역·대리점·장비·사용항목 검색 후 Enter" style="flex:1;">
+        <select id="userlistMode" onchange="renderUserlist()" style="margin-left:8px;">
+          <option value="full">전체 리스트</option>
+          <option value="ext">대표 외부용(Top)</option>
+        </select>
+      </div>
+      <div class="g-sub" id="userlistMeta" style="font-size:11.5px;color:#9ca3af;margin-bottom:8px;"></div>
+      <div class="table-scroll" style="max-height:600px;"><table class="wk-table" id="userlistTable"></table></div>
+    </div>
   </div>
 </div>
 
@@ -744,9 +750,7 @@ function switchTab(t){
   else if(t==='faq'){ document.getElementById('faqSearch').value=''; loadGuideExtras().then(renderFaq); }
   else if(t==='ref'){ document.getElementById('refSearch').value=''; refKw=''; loadRefLog(); }
   else if(t==='unisearch'){ document.getElementById('uniSearch').value=''; renderUniSearch(); }
-  else if(t==='contacts'){ document.getElementById('contactsSearch').value=''; renderContacts(); }
-  else if(t==='agencylist'){ document.getElementById('agencySearch').value=''; renderAgencyList(); }
-  else if(t==='userlist'){ document.getElementById('userlistSearch').value=''; renderUserlist(); }
+  else if(t==='agencyinfo'){ switchAgiSub('contacts'); }
 }
 document.querySelectorAll('.tab').forEach(function(t){ t.addEventListener('click', function(){ switchTab(t.dataset.tab); }); });
 
@@ -1707,6 +1711,14 @@ function applyUnifyPlan(){
 }
 document.addEventListener('keydown', function(e){ if(e.key==='Escape' && document.getElementById('unifyModal').classList.contains('show')) closeUnifyModal(); });
 
+function switchAgiSub(name){
+  document.querySelectorAll('.agi-subtab').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-agi')===name); });
+  document.querySelectorAll('.agi-pane').forEach(function(p){ p.style.display = (p.id==='agi-'+name) ? '' : 'none'; });
+  if(name==='contacts'){ document.getElementById('contactsSearch').value=''; renderContacts(); }
+  else if(name==='agencylist'){ document.getElementById('agencySearch').value=''; renderAgencyList(); }
+  else if(name==='userlist'){ document.getElementById('userlistSearch').value=''; renderUserlist(); }
+}
+
 /* ===== 대표 소통담당자 / 대리점 리스트 / AFIAS 사용자 리스트 / 통합검색 ===== */
 var EXT_CONTACTS = (typeof AGENCY_CONTACTS!=='undefined')?AGENCY_CONTACTS:[];
 var EXT_AGENCIES = (typeof AGENCY_LIST!=='undefined')?AGENCY_LIST:[];
@@ -1733,61 +1745,16 @@ function renderContacts(){
   }).join('');
   document.getElementById('contactsTable').innerHTML = head+'<tbody>'+(body||'<tr><td class="empty" colspan="6">검색 결과가 없습니다.</td></tr>')+'</tbody>';
 }
-var AGENCY_MERGED = null;
-var agencyDetailOpen = {};
-function normAgency(s){ return String(s==null?'':s).trim().toLowerCase().replace(/\s+/g,''); }
-function buildAgencyMergedRows(){
-  var byAgency = {};
-  function ensure(nameRaw){
-    var n = normAgency(nameRaw);
-    if(!n) return null;
-    if(!byAgency[n]) byAgency[n] = {agency:nameRaw, salesRep:'', type:'', note:'', products:[], contacts:[], sites:[]};
-    return byAgency[n];
-  }
-  EXT_AGENCIES.forEach(function(r){
-    var e = ensure(r.agency); if(!e) return;
-    e.agency = r.agency; e.salesRep = r.salesRep; e.type = r.type; e.note = r.note; e.products = r.products||[];
-  });
-  EXT_CONTACTS.forEach(function(r){
-    var e = ensure(r.agency); if(!e) return;
-    if(!e.salesRep) e.salesRep = r.salesRep;
-    if(!e.type) e.type = r.type;
-    e.contacts.push({name:r.contactName, phone:r.phone, email:r.email});
-  });
-  EXT_USERLIST.forEach(function(r){
-    var e = ensure(r.agency); if(!e) return;
-    e.sites.push({hospital:r.hospital, sido:r.sido, sigungu:r.sigungu, device:r.device, items:r.items, rental:r.rental});
-  });
-  return Object.keys(byAgency).map(function(k){ return byAgency[k]; }).sort(function(a,b){ return String(a.agency||'').localeCompare(String(b.agency||''),'ko'); });
-}
-function toggleAgencyDetail(key){ agencyDetailOpen[key] = !agencyDetailOpen[key]; renderAgencyList(); }
 function renderAgencyList(){
-  if(!AGENCY_MERGED) AGENCY_MERGED = buildAgencyMergedRows();
   var kw = document.getElementById('agencySearch').value.trim();
-  var rows = AGENCY_MERGED.filter(function(r){
-    return rowMatch([r.agency, r.salesRep, r.type, r.note, (r.products||[]).join(' '),
-      r.contacts.map(function(c){return c.name+' '+c.phone+' '+c.email;}).join(' '),
-      r.sites.map(function(s){return s.hospital+' '+s.device+' '+s.sido;}).join(' ')], kw);
-  });
-  document.getElementById('agencyMeta').textContent = '대표 소통담당자 · 대리점 리스트 · AFIAS 사용자 리스트를 대리점 기준으로 통합 (' + metaLine('agencies') + ') · 총 '+rows.length+'개 대리점 (전체 '+AGENCY_MERGED.length+'개)';
-  var head = '<thead><tr><th>영업담당자</th><th>대리점</th><th>구분</th><th>담당자</th><th>휴대전화</th><th>Email</th><th>취급제품</th><th>AFIAS 설치처</th></tr></thead>';
+  document.getElementById('agencyMeta').textContent = metaLine('agencies')+' · 총 '+EXT_AGENCIES.length+'건';
+  var rows = EXT_AGENCIES.filter(function(r){ return rowMatch([r.agency,r.salesRep,r.type,r.note,(r.products||[]).join(' ')], kw); });
+  var head = '<thead><tr><th>영업담당자</th><th>대리점</th><th>구분</th><th>비고</th><th>취급제품</th></tr></thead>';
   var body = rows.map(function(r){
-    var key = normAgency(r.agency);
     var prod = (r.products||[]).map(function(p){ return '<span class="tag">'+esc(p)+'</span>'; }).join(' ');
-    var contactName = r.contacts.map(function(c){return c.name;}).filter(Boolean).join(', ');
-    var contactPhone = r.contacts.map(function(c){return c.phone;}).filter(Boolean).join(', ');
-    var contactEmail = r.contacts.map(function(c){return c.email;}).filter(Boolean).join(', ');
-    var siteCount = r.sites.length;
-    var openBtn = siteCount ? ('<button type="button" class="btn btn-ghost" style="padding:3px 8px;font-size:11.5px;" onclick="toggleAgencyDetail(\''+key+'\')">'+(agencyDetailOpen[key]?'▲ 접기':'▼ '+siteCount+'건')+'</button>') : '<span style="color:#9ca3af;">-</span>';
-    var mainRow = '<tr><td>'+esc(r.salesRep)+'</td><td style="font-weight:700;">'+esc(r.agency)+'</td><td>'+esc(r.type)+'</td><td>'+esc(contactName)+'</td><td>'+esc(contactPhone)+'</td><td>'+esc(contactEmail)+'</td><td>'+prod+'</td><td>'+openBtn+'</td></tr>';
-    var detailRow = '';
-    if(agencyDetailOpen[key] && siteCount){
-      var siteRows = r.sites.map(function(s){ return '<tr><td>'+esc(s.sido)+' '+esc(s.sigungu)+'</td><td>'+esc(s.hospital)+'</td><td>'+esc(s.device)+'</td><td>'+esc(s.rental)+'</td></tr>'; }).join('');
-      detailRow = '<tr><td colspan="8" style="background:#f9fafb;padding:10px;"><table class="wk-table"><thead><tr><th>지역</th><th>의료기관명</th><th>장비</th><th>임대여부</th></tr></thead><tbody>'+siteRows+'</tbody></table></td></tr>';
-    }
-    return mainRow+detailRow;
+    return '<tr><td>'+esc(r.salesRep)+'</td><td>'+esc(r.agency)+'</td><td>'+esc(r.type)+'</td><td>'+esc(r.note)+'</td><td>'+prod+'</td></tr>';
   }).join('');
-  document.getElementById('agencyTable').innerHTML = head+'<tbody>'+(body||'<tr><td class="empty" colspan="8">검색 결과가 없습니다.</td></tr>')+'</tbody>';
+  document.getElementById('agencyTable').innerHTML = head+'<tbody>'+(body||'<tr><td class="empty" colspan="5">검색 결과가 없습니다.</td></tr>')+'</tbody>';
 }
 function renderUserlist(){
   var kw = document.getElementById('userlistSearch').value.trim();
