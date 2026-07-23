@@ -40,6 +40,12 @@
   .chip .n { font-size:11px; opacity:.7; margin-left:4px; }
 
   .section { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px 20px; margin-bottom:16px; }
+  .detail-section { background:#eff6ff; border:2px solid var(--accent); border-radius:var(--radius); padding:18px 20px; margin-bottom:16px; box-shadow:0 4px 14px rgba(37,99,235,.12); }
+  .detail-section h2 { font-size:14px; font-weight:800; color:var(--accent); margin-bottom:12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .detail-section h2 .cnt { background:var(--accent); border-radius:10px; padding:1px 9px; font-size:11px; color:#fff; }
+  .detail-back-btn { margin-left:auto; background:var(--accent); color:#fff; border:none; border-radius:8px; padding:7px 14px; font-size:12.5px; font-weight:700; cursor:pointer; }
+  .detail-back-btn:hover { background:#1d4ed8; }
+  .detail-section .table-wrap { background:var(--surface); border-radius:8px; }
   .section h2 { font-size:13px; font-weight:700; color:var(--text2); text-transform:uppercase; letter-spacing:.8px; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
   .section h2 .cnt { background:var(--surface2); border-radius:10px; padding:1px 9px; font-size:11px; color:var(--accent); }
 
@@ -105,6 +111,8 @@
 <script src="info-docs.js"></script>
 <script src="device-data.js"></script>
 <script src="hub-sheet.js"></script>
+<script src="master-list.js"></script>
+<script src="strict-list.js"></script>
 </head>
 <body>
 <div class="app">
@@ -408,8 +416,27 @@ function normalizeDateInput(str) {
   return str; // 형식 확인 실패 시 원문 그대로 반환 (호출부에서 검증)
 }
 
+/* 구글시트가 'YYYY-MM-DD' 텍스트를 날짜 셀로 자동 변환하면
+   불러올 때 '2026-07-14T15:00:00.000Z' 같은 ISO(UTC) 문자열로 돌아온다.
+   → 다시 한국시간 기준 'YYYY-MM-DD'로 되돌린다. */
+function normalizeSheetDate(v) {
+  if (v == null || v === '') return '';
+  const s = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    const d = new Date(s);
+    if (!isNaN(d)) {
+      // UTC → KST(+9h) 보정 후 날짜만 추출 (어느 브라우저 시간대에서도 동일 결과)
+      const k = new Date(d.getTime() + 9 * 3600 * 1000);
+      return k.getUTCFullYear() + '-' + String(k.getUTCMonth() + 1).padStart(2, '0') + '-' + String(k.getUTCDate()).padStart(2, '0');
+    }
+  }
+  return s;
+}
+
 function loadCartLog() {
   return CartStore.list().then(list => {
+    (list || []).forEach(r => { r.date = normalizeSheetDate(r.date); });
     CART_LOG = (list || []).slice().sort((a, b) => {
       const da = a.date || '', db = b.date || '';
       if (da !== db) return da < db ? 1 : -1;
@@ -426,7 +453,7 @@ function cartMarkerList() {
 }
 
 function splitKeywords(str) {
-  return (str || '').split(',').map(s => s.trim()).filter(Boolean);
+  return String(str == null ? '' : str).split(',').map(s => s.trim()).filter(Boolean);
 }
 
 function cartKeywordList() {
@@ -461,6 +488,7 @@ function submitCartEntry() {
   let op;
   if (cartEditId) { rec.id = cartEditId; op = CartStore.update(rec); }
   else { rec.id = 'c_' + Date.now() + '_' + Math.random().toString(36).slice(2,6); op = CartStore.add(rec); }
+  const savedId = rec.id, savedKeyword = keyword;
   op.then(() => {
     hint.textContent = (cartEditId ? '수정되었습니다.' : '저장되었습니다.') + (CartStore.shared ? ' (전 직원 공유)' : ' (이 브라우저)');
     hint.style.color = 'var(--accent3)';
@@ -474,7 +502,19 @@ function submitCartEntry() {
     document.getElementById('cartPlatformOther').value = '';
     document.getElementById('cartPlatformOther').style.display = 'none';
     document.getElementById('cartSubmitBtn').textContent = '저장';
-    return loadCartLog();
+    return loadCartLog().then(() => {
+      // 저장 직후 검증: 키워드가 시트에 실제로 저장되었는지 확인
+      if (CartStore.shared && savedKeyword) {
+        const saved = CART_LOG.find(r => String(r.id) === String(savedId));
+        if (saved && !String(saved.keyword == null ? '' : saved.keyword).trim()) {
+          const h = document.getElementById('cartHint');
+          if (h) {
+            h.innerHTML = '⚠ 키워드가 구글시트에 저장되지 않았습니다. <b>Code.gs를 새 버전으로 교체·재배포</b>해야 합니다 (패키지의 Code.gs 참조).';
+            h.style.color = 'var(--red)';
+          }
+        }
+      }
+    });
   }).catch(err => {
     hint.textContent = '⚠ 저장 중 오류: ' + err.message; hint.style.color = 'var(--red)';
   });
@@ -530,6 +570,72 @@ function deleteCartEntry(id, ev) {
   CartStore.remove(id).then(() => loadCartLog());
 }
 
+/* ===== 마커명 이름 통일 (기존 저장 데이터 정리) ===== */
+let UNIFY_PLAN = [];
+let UNIFY_LIST = [];
+function openUnifyModal(){
+  document.getElementById('unifyModal').style.display = 'flex';
+  document.getElementById('unifyBody').innerHTML = '<div style="color:var(--text2);">검사 중…</div>';
+  document.getElementById('unifyApplyBtn').style.display = 'none';
+  CartStore.list().then(list => {
+    UNIFY_LIST = list || [];
+    const items = (typeof MASTER_ITEM !== 'undefined') ? MASTER_ITEM : [];
+    const plan = [];
+    const unmatched = {};
+    UNIFY_LIST.forEach(r => {
+      if (!r.marker) return;
+      const canon = StrictList.findCanonical(items, r.marker);
+      if (canon && canon !== r.marker) plan.push({ id: r.id, old: r.marker, val: canon });
+      else if (!canon) unmatched[r.marker] = (unmatched[r.marker] || 0) + 1;
+    });
+    UNIFY_PLAN = plan;
+    renderUnifyPlan(plan, unmatched);
+  }).catch(err => {
+    document.getElementById('unifyBody').innerHTML = `<div style="color:var(--red);">확인 중 오류: ${esc(err.message)}</div>`;
+  });
+}
+function closeUnifyModal(){ document.getElementById('unifyModal').style.display = 'none'; }
+
+function renderUnifyPlan(plan, unmatched){
+  const body = document.getElementById('unifyBody');
+  let html = '';
+  if (!plan.length) {
+    html += '<div style="color:var(--accent3);">✅ 표준 표기와 다르게 저장된 마커명이 없습니다.</div>';
+  } else {
+    html += `<div style="margin-bottom:10px;font-size:12.5px;">대소문자·공백만 다르게 저장된 ${plan.length}건을 찾았습니다. 적용할 항목을 선택 후 [선택한 항목 적용]을 눌러주세요.</div>`;
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="text-align:left;border-bottom:1px solid var(--border);"><th></th><th>기존 값</th><th></th><th>표준 값</th></tr></thead><tbody>' +
+      plan.map((p,i)=>`<tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 4px;"><input type="checkbox" class="unify-chk" data-idx="${i}" checked></td><td style="padding:6px 4px;">${esc(p.old)}</td><td style="padding:6px 4px;">→</td><td style="padding:6px 4px;font-weight:700;color:var(--accent);">${esc(p.val)}</td></tr>`).join('') +
+      '</tbody></table>';
+    document.getElementById('unifyApplyBtn').style.display = '';
+  }
+  const unmatchedKeys = Object.keys(unmatched);
+  if (unmatchedKeys.length) {
+    html += `<div style="margin-top:14px;padding:12px;background:#fff7e6;border:1px solid #ffe0a3;border-radius:8px;font-size:12.5px;">
+      ⚠ 표준 목록에 없는 값(자동 수정 대상 아님) — ${unmatchedKeys.length}개<br>
+      ${unmatchedKeys.slice(0,40).map(k=>`${esc(k)} (${unmatched[k]}건)`).join(', ')}${unmatchedKeys.length>40?` … 외 ${unmatchedKeys.length-40}개`:''}</div>`;
+  }
+  body.innerHTML = html;
+}
+
+async function applyUnifyPlan(){
+  const checks = document.querySelectorAll('.unify-chk:checked');
+  if (!checks.length) return;
+  const idxSet = {}; checks.forEach(c => { idxSet[c.getAttribute('data-idx')] = true; });
+  const btn = document.getElementById('unifyApplyBtn'); btn.disabled = true; btn.textContent = '적용 중…';
+  let done = 0, fail = 0;
+  for (let i = 0; i < UNIFY_PLAN.length; i++) {
+    if (!idxSet[i]) continue;
+    const p = UNIFY_PLAN[i];
+    const rec = UNIFY_LIST.find(r => String(r.id) === String(p.id));
+    if (!rec) continue;
+    const updated = Object.assign({}, rec, { marker: p.val });
+    try { await CartStore.update(updated); done++; } catch (e) { fail++; }
+  }
+  document.getElementById('unifyBody').innerHTML = `<div style="color:${fail ? 'var(--red)' : 'var(--accent3)'};">✅ ${done}건 업데이트했습니다.${fail ? ` (${fail}건 실패 — 다시 시도해주세요)` : ''}</div>`;
+  btn.style.display = 'none';
+  loadCartLog();
+}
+
 function renderCartridgeView() {
   const matched = CART_LOG.filter(matchKw);
 
@@ -550,7 +656,9 @@ function renderCartridgeView() {
 
   let html = `
   <div class="section" id="cartEntryForm">
-    <h2>카트리지 기록 추가 <span style="font-size:11px;color:var(--text2);text-transform:none;font-weight:400;">${CartStore.shared ? '· 🟢 전 직원 실시간 공유' : '· 🟡 이 브라우저에만 저장'}</span></h2>
+    <h2>카트리지 기록 추가 <span style="font-size:11px;color:var(--text2);text-transform:none;font-weight:400;">${CartStore.shared ? '· 🟢 전 직원 실시간 공유' : '· 🟡 이 브라우저에만 저장'}</span>
+      <button type="button" onclick="openUnifyModal()" style="float:right;font-size:11px;text-transform:none;font-weight:600;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;cursor:pointer;color:var(--accent);">🔧 마커명 이름 통일</button>
+    </h2>
     <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:12px;">
       <div>
         <label style="font-size:11px;font-weight:700;color:var(--text2);display:block;margin-bottom:4px;">플랫폼</label>
@@ -599,17 +707,19 @@ function renderCartridgeView() {
 
   if (kw) html += `<div style="font-size:13px;color:var(--text2);margin-bottom:10px;">"${esc(kw)}" 검색 결과: <b style="color:var(--accent)">${matched.length}건</b> · <b style="color:var(--accent)">${markers.length}개 마커</b></div>`;
 
-  html += `<div class="section"><h2>마커별 기록 ${kw ? '(검색 결과)' : '(전체)'} <span class="cnt">${markers.length}</span></h2>
+  html += `<div class="section" id="cartMarkerListSection"><h2>마커별 기록 ${kw ? '(검색 결과)' : '(전체)'} <span class="cnt">${markers.length}</span></h2>
   <div class="table-wrap"><table>
-    <thead><tr><th>마커명</th><th>플랫폼</th><th>기록 수</th><th>최근 작성일</th><th>상세</th></tr></thead><tbody>` +
+    <thead><tr><th>마커명</th><th>플랫폼</th><th>키워드</th><th>기록 수</th><th>최근 작성일</th><th>상세</th></tr></thead><tbody>` +
     markers.map(m => {
       const rows = groups[m];
       const platforms = Array.from(new Set(rows.map(r => r.platform || '기타')));
+      const kws = Array.from(new Set(rows.reduce((acc, r) => acc.concat(splitKeywords(r.keyword)), [])));
       const lastDate = rows.reduce((mx, r) => (r.date || '') > mx ? (r.date || '') : mx, '');
       const mKey = esc(m).replace(/'/g, "\\'");
       return `<tr class="clickable" onclick="showMarkerDetail('${mKey}')">
         <td style="font-weight:700;color:var(--accent)">${hl(m)}</td>
         <td>${platforms.map(p => `<span class="tag tag-gray">${esc(p)}</span>`).join(' ')}</td>
+        <td style="max-width:220px;">${kws.slice(0,4).map(k => `<span class="tag tag-gray">#${hl(k)}</span>`).join(' ')}${kws.length > 4 ? ` <span style="color:var(--text2);font-size:11px;">외 ${kws.length-4}</span>` : ''}${kws.length ? '' : '<span style="color:var(--text2);">-</span>'}</td>
         <td><b>${rows.length}</b></td>
         <td>${lastDate || '-'}</td>
         <td><button type="button" onclick="event.stopPropagation();showMarkerDetail('${mKey}')" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer;color:var(--accent);font-weight:600;">자세히</button></td>
@@ -618,46 +728,15 @@ function renderCartridgeView() {
 
   html += `<div id="markerDetailResults"></div>`;
 
-  // 키워드별 그룹 (한 기록이 키워드 여러 개를 가질 수 있으므로 다중 소속)
-  const kwGroups = {};
-  matched.forEach(r => {
-    const ks = splitKeywords(r.keyword);
-    (ks.length ? ks : ['(키워드 미입력)']).forEach(k => {
-      (kwGroups[k] = kwGroups[k] || []).push(r);
-    });
-  });
-  const keywordsList = Object.keys(kwGroups).sort((a, b) => {
-    const la = kwGroups[a].reduce((mx, r) => (r.date || '') > mx ? (r.date || '') : mx, '');
-    const lb = kwGroups[b].reduce((mx, r) => (r.date || '') > mx ? (r.date || '') : mx, '');
-    if (la !== lb) return la < lb ? 1 : -1;
-    return a.localeCompare(b, 'ko');
-  });
-
-  html += `<div class="section"><h2>키워드별 기록 ${kw ? '(검색 결과)' : '(전체)'} <span class="cnt">${keywordsList.length}</span></h2>
-  <div class="table-wrap"><table>
-    <thead><tr><th>키워드</th><th>관련 마커</th><th>기록 수</th><th>최근 작성일</th><th>상세</th></tr></thead><tbody>` +
-    keywordsList.map(k => {
-      const rows = kwGroups[k];
-      const markersHere = Array.from(new Set(rows.map(r => r.marker || '(마커 미입력)')));
-      const lastDate = rows.reduce((mx, r) => (r.date || '') > mx ? (r.date || '') : mx, '');
-      const kKey = esc(k).replace(/'/g, "\\'");
-      return `<tr class="clickable" onclick="showKeywordDetail('${kKey}')">
-        <td style="font-weight:700;color:var(--accent)">${hl(k)}</td>
-        <td>${markersHere.slice(0,4).map(m => `<span class="tag tag-gray">${esc(m)}</span>`).join(' ')}${markersHere.length > 4 ? ` <span style="color:var(--text2);">외 ${markersHere.length-4}</span>` : ''}</td>
-        <td><b>${rows.length}</b></td>
-        <td>${lastDate || '-'}</td>
-        <td><button type="button" onclick="event.stopPropagation();showKeywordDetail('${kKey}')" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer;color:var(--accent);font-weight:600;">자세히</button></td>
-      </tr>`;
-    }).join('') + `</tbody></table></div></div>`;
-
-  html += `<div id="keywordDetailResults"></div>`;
-
   if (!markers.length) html += `<div class="empty-state"><div class="ico">🗒️</div><p>${kw ? `"${esc(kw)}"에 해당하는 기록이 없습니다.` : '아직 등록된 카트리지 기록이 없습니다. 위에서 추가해보세요.'}</p></div>`;
 
   document.getElementById('mainContent').innerHTML = html;
 
   const dateEl = document.getElementById('cartDate');
   if (dateEl) dateEl.addEventListener('blur', () => { if (dateEl.value.trim()) dateEl.value = normalizeDateInput(dateEl.value); });
+
+  const markerEl = document.getElementById('cartMarker');
+  if (markerEl) StrictList.attach(markerEl, () => (typeof MASTER_ITEM !== 'undefined') ? MASTER_ITEM : []);
 
   setupCartEnterAsTab();
 }
@@ -686,40 +765,6 @@ function setupCartEnterAsTab() {
   });
 }
 
-function showKeywordDetail(keyword) {
-  const el = document.getElementById('keywordDetailResults');
-  if (!el) return;
-  let rows = CART_LOG.filter(r => {
-    const ks = splitKeywords(r.keyword);
-    return (ks.length ? ks : ['(키워드 미입력)']).includes(keyword) && matchKw(r);
-  });
-  rows = rows.slice().sort((a, b) => {
-    const da = a.date || '', db = b.date || '';
-    if (da !== db) return da < db ? 1 : -1;
-    return 0;
-  });
-  el.innerHTML = `
-  <div class="section" style="margin-top:16px;">
-    <h2>#${esc(keyword)} <span class="cnt">${rows.length}건</span></h2>
-    <div class="table-wrap"><table>
-      <thead><tr><th>마커명</th><th>플랫폼</th><th>LOT No.</th><th>작성일</th><th>작성자</th><th>메일제목/경로</th><th>내용</th><th></th></tr></thead><tbody>` +
-      rows.map(r => `<tr>
-          <td style="font-weight:600;color:var(--accent)">${esc(r.marker || '-')}</td>
-          <td><span class="tag tag-gray">${esc(r.platform || '-')}</span></td>
-          <td style="font-weight:600;">${esc(r.lot || '-')}</td>
-          <td style="white-space:nowrap;">${esc(r.date || '-')}</td>
-          <td style="white-space:nowrap;">${esc(r.author || '-')}</td>
-          <td style="max-width:220px;word-break:break-all;">${esc(r.ref || '-')}</td>
-          <td style="white-space:pre-wrap;max-width:340px;">${esc(r.note || '-')}</td>
-          <td style="white-space:nowrap;">
-            <button type="button" onclick="editCartEntry('${esc(r.id)}')" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;color:var(--text);margin-right:4px;">수정</button>
-            <button type="button" onclick="deleteCartEntry('${esc(r.id)}', event)" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;">✕</button>
-          </td>
-        </tr>`).join('') + `</tbody></table></div>
-  </div>`;
-  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
 function showMarkerDetail(marker) {
   const el = document.getElementById('markerDetailResults');
   if (!el) return;
@@ -730,8 +775,10 @@ function showMarkerDetail(marker) {
     return 0;
   });
   el.innerHTML = `
-  <div class="section" style="margin-top:16px;">
-    <h2>${esc(marker)} <span class="cnt">${rows.length}건</span></h2>
+  <div class="detail-section" style="margin-top:16px;">
+    <h2>🔍 ${esc(marker)} — 상세 기록 <span class="cnt">${rows.length}건</span>
+      <button type="button" class="detail-back-btn" onclick="closeMarkerDetail()">← 목록으로 돌아가기</button>
+    </h2>
     <div class="table-wrap"><table>
       <thead><tr><th>플랫폼</th><th>LOT No.</th><th>작성일</th><th>작성자</th><th>키워드</th><th>메일제목/경로</th><th>내용</th><th></th></tr></thead><tbody>` +
       rows.map(r => `<tr>
@@ -747,8 +794,18 @@ function showMarkerDetail(marker) {
             <button type="button" onclick="deleteCartEntry('${esc(r.id)}', event)" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;">✕</button>
           </td>
         </tr>`).join('') + `</tbody></table></div>
+    <div style="margin-top:12px;text-align:center;">
+      <button type="button" class="detail-back-btn" style="margin-left:0;" onclick="closeMarkerDetail()">← 목록으로 돌아가기</button>
+    </div>
   </div>`;
   el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function closeMarkerDetail() {
+  const el = document.getElementById('markerDetailResults');
+  if (el) el.innerHTML = '';
+  const listEl = document.getElementById('cartMarkerListSection');
+  if (listEl) listEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 /* ============ 검색 (Enter 전용) ============ */
@@ -766,5 +823,21 @@ function render() {
 render();
 loadCartLog();
 </script>
+<div id="unifyModal" onclick="if(event.target===this) closeUnifyModal()" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:1000;padding:24px 14px;overflow-y:auto;align-items:flex-start;justify-content:center;">
+  <div style="background:#fff;border-radius:14px;max-width:760px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+    <div style="display:flex;gap:10px;align-items:flex-start;padding:16px 18px;border-bottom:1px solid var(--border);">
+      <div style="flex:1;min-width:0;">
+        <h3 style="margin:0 0 4px;font-size:16px;">🔧 마커명 이름 통일</h3>
+        <div style="font-size:12.5px;color:var(--text2);">카트리지 기록에 저장된 마커명 중 표준 목록(master-list.js)과 대소문자·공백만 다른 값을 찾아 표준 표기로 맞춥니다.</div>
+      </div>
+      <button onclick="closeUnifyModal()" style="border:none;background:none;font-size:18px;cursor:pointer;color:var(--text2);">✕</button>
+    </div>
+    <div id="unifyBody" style="padding:16px 18px;max-height:60vh;overflow:auto;"><div style="color:var(--text2);">검사 중…</div></div>
+    <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;gap:10px;">
+      <button id="unifyApplyBtn" onclick="applyUnifyPlan()" style="display:none;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer;font-weight:600;">선택한 항목 적용</button>
+      <button onclick="closeUnifyModal()" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer;">닫기</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>

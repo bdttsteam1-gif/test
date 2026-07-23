@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>거래처 이력 카드</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="master-list.js"></script>
+<script src="strict-list.js"></script>
 <style>
   :root{
     --bg: #f2f4f3;
@@ -89,6 +91,15 @@
   textarea{resize:vertical; min-height:60px; line-height:1.5;}
   .etc-box{margin-top:6px; display:none;}
   .etc-box.show{display:block;}
+  .device-blocks{display:flex; flex-direction:column; gap:14px; margin:6px 0 18px;}
+  .device-block{border:1px solid var(--line); border-radius:12px; padding:16px; background:#fbfcfb; position:relative;}
+  .device-block-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;}
+  .device-block-title{font-size:12.5px; font-weight:800; color:var(--accent-dark);}
+  .device-block-remove{background:transparent; border:none; color:var(--ink-soft); font-size:12px; font-weight:700; cursor:pointer; padding:4px 8px;}
+  .device-block-remove:hover{color:#b5581f;}
+  .device-name-row{display:grid; grid-template-columns:1.4fr 1fr; gap:10px;}
+  .device-name-row .field{margin-bottom:0;}
+  @media (max-width:640px){ .device-name-row{grid-template-columns:1fr;} }
   .btn-row{margin-top:20px; display:flex; gap:10px; justify-content:flex-end; align-items:center;}
   .hint-inline{font-size:12px; color:var(--ink-soft); margin-right:auto;}
   button{
@@ -243,6 +254,7 @@
     <button class="tab-btn" data-tab="hospital">🏥 병원별 조회</button>
     <button class="tab-btn" data-tab="hospitalList">📋 전체 병원 리스트</button>
     <button class="tab-btn" data-tab="search">🔎 전체 검색</button>
+    <button type="button" onclick="openUnifyModal()" style="margin-left:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 14px;font-size:12.5px;cursor:pointer;color:var(--ink-soft);white-space:nowrap;">🔧 기기명 이름 통일</button>
   </div>
 
   <!-- ENTRY TAB -->
@@ -297,35 +309,19 @@
           <div class="etc-box" id="box_category"><input type="text" id="etc_category" placeholder="분류 직접 입력"></div>
         </div>
         <div class="field">
-          <label>기기명</label>
-          <input type="text" id="f_device" placeholder="예: AFIAS-10" autocomplete="off">
-        </div>
-
-        <div class="field">
           <label>SN</label>
           <input type="text" id="f_sn" placeholder="장비 시리얼 번호">
         </div>
-        <div class="field">
-          <label>시약명</label>
-          <input type="text" id="f_reagent" placeholder="예: CRP" autocomplete="off">
-        </div>
-        <div class="field">
-          <label>시약LOT</label>
-          <input type="text" id="f_reagentLot" placeholder="LOT 번호">
-        </div>
+      </div>
 
-        <div class="field span3">
-          <label>접수사항</label>
-          <textarea id="f_request" placeholder="문의/컴플레인 접수 내용"></textarea>
-        </div>
-        <div class="field span3">
-          <label>조치사항</label>
-          <textarea id="f_action" placeholder="현장 조치 내용"></textarea>
-        </div>
-        <div class="field span3">
-          <label>기타 (특이사항, 현황, 정보)</label>
-          <textarea id="f_etc" placeholder="추가 메모"></textarea>
-        </div>
+      <div class="section-title" style="font-size:13px;margin-top:22px;">장비 정보 <span style="font-weight:400;color:var(--ink-soft);">(최대 5개, 장비별로 시약·접수/조치사항을 따로 기록합니다)</span></div>
+      <div class="device-blocks" id="deviceBlocks"></div>
+      <div style="margin-bottom:18px;">
+        <button class="btn-ghost btn-small" id="btnAddDevice" type="button">+ 장비 추가</button>
+        <span id="deviceLimitHint" style="font-size:11.5px;color:var(--ink-soft);margin-left:8px;"></span>
+      </div>
+
+      <div class="form-grid">
         <div class="field span3">
           <label>선생님 특징</label>
           <textarea id="f_doctorNote" placeholder="선생님 성향, 소통 시 유의사항, 선호사항 등"></textarea>
@@ -696,6 +692,70 @@ async function deleteRecordRemote(id){
   }
 }
 
+/* ============ 기기명 이름 통일 (기존 저장 데이터 정리) ============ */
+let UNIFY_PLAN = [];
+function openUnifyModal(){
+  document.getElementById('unifyModal').style.display = 'flex';
+  document.getElementById('unifyBody').innerHTML = '<div style="color:var(--ink-soft);">검사 중…</div>';
+  document.getElementById('unifyApplyBtn').style.display = 'none';
+  buildUnifyPlan();
+}
+function closeUnifyModal(){ document.getElementById('unifyModal').style.display = 'none'; }
+
+function buildUnifyPlan(){
+  const list = (typeof MASTER_DEVICE!=='undefined') ? MASTER_DEVICE : [];
+  const plan = [];
+  const unmatched = {};
+  RECORDS.forEach(r=>{
+    if(!r.device) return;
+    const canon = StrictList.findCanonical(list, r.device);
+    if(canon && canon!==r.device){ plan.push({id:r.id, old:r.device, val:canon}); }
+    else if(!canon){ unmatched[r.device] = (unmatched[r.device]||0)+1; }
+  });
+  UNIFY_PLAN = plan;
+  renderUnifyPlan(plan, unmatched);
+}
+
+function renderUnifyPlan(plan, unmatched){
+  const body = document.getElementById('unifyBody');
+  let html = '';
+  if(!plan.length){
+    html += '<div style="color:#0f6e5c;">✅ 표준 표기와 다르게 저장된 기기명이 없습니다.</div>';
+  } else {
+    html += `<div style="margin-bottom:10px;font-size:12.5px;color:var(--ink);">대소문자·공백만 다르게 저장된 ${plan.length}건을 찾았습니다. 적용할 항목을 선택 후 [선택한 항목 적용]을 눌러주세요.</div>`;
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="text-align:left;border-bottom:1px solid var(--line);"><th></th><th>기존 값</th><th></th><th>표준 값</th></tr></thead><tbody>' +
+      plan.map((p,i)=>`<tr style="border-bottom:1px solid var(--line);"><td style="padding:6px 4px;"><input type="checkbox" class="unify-chk" data-idx="${i}" checked></td><td style="padding:6px 4px;">${escapeHtml(p.old)}</td><td style="padding:6px 4px;">→</td><td style="padding:6px 4px;font-weight:700;color:var(--accent);">${escapeHtml(p.val)}</td></tr>`).join('') +
+      '</tbody></table>';
+    document.getElementById('unifyApplyBtn').style.display = '';
+  }
+  const unmatchedKeys = Object.keys(unmatched);
+  if(unmatchedKeys.length){
+    html += `<div style="margin-top:14px;padding:12px;background:#fbe9dd;border:1px solid #f0c39e;border-radius:8px;font-size:12.5px;color:#b5581f;">
+      ⚠ 표준 목록에 없는 값(자동 수정 대상 아님) — ${unmatchedKeys.length}개<br>
+      ${unmatchedKeys.slice(0,40).map(k=>`${escapeHtml(k)} (${unmatched[k]}건)`).join(', ')}${unmatchedKeys.length>40?` … 외 ${unmatchedKeys.length-40}개`:''}</div>`;
+  }
+  body.innerHTML = html;
+}
+
+async function applyUnifyPlan(){
+  const checks = document.querySelectorAll('.unify-chk:checked');
+  if(!checks.length) return;
+  const idxSet = {}; checks.forEach(c=>{ idxSet[c.getAttribute('data-idx')] = true; });
+  const btn = document.getElementById('unifyApplyBtn'); btn.disabled = true; btn.textContent = '적용 중…';
+  let done = 0, fail = 0;
+  for(let i=0;i<UNIFY_PLAN.length;i++){
+    if(!idxSet[i]) continue;
+    const p = UNIFY_PLAN[i];
+    const rec = RECORDS.find(r=>r.id===p.id);
+    if(!rec) continue;
+    const updated = Object.assign({}, rec, {device: p.val});
+    const ok = await updateRecord(p.id, updated);
+    if(ok) done++; else fail++;
+  }
+  document.getElementById('unifyBody').innerHTML = `<div style="color:${fail?'#b5581f':'#0f6e5c'};">✅ ${done}건 업데이트했습니다.${fail?` (${fail}건 실패 — 다시 시도해주세요)`:''}</div>`;
+  btn.style.display = 'none';
+}
+
 /* ============ INIT UI ============ */
 function fillSelect(sel, list){
   sel.innerHTML = '<option value="">선택</option>' + list.map(v=>`<option>${escapeHtml(v)}</option>`).join('');
@@ -905,6 +965,132 @@ function setupAutocomplete(inputId, optionsKey, maxResults=30, onSelect=null){
   });
 }
 
+/* ============ 장비 블록 (최대 5개, 장비별 시약/접수/조치/기타 분리) ============ */
+const MAX_DEVICE_BLOCKS = 5;
+let deviceBlockSeq = 0;
+
+function attachEnterAsTabTo(el){
+  el.addEventListener('keydown', (e)=>{
+    if(e.key !== 'Enter' || e.isComposing) return;
+    if(e.defaultPrevented) return;
+    e.preventDefault();
+    focusNextEntryField(el);
+  });
+}
+
+function deviceBlockEls(){ return Array.from(document.querySelectorAll('#deviceBlocks .device-block')); }
+
+function updateDeviceBlockUI(){
+  const blocks = deviceBlockEls();
+  blocks.forEach((b,i)=>{
+    b.querySelector('.device-block-title').textContent = '장비 ' + (i+1);
+    const rm = b.querySelector('.device-block-remove');
+    rm.style.display = blocks.length > 1 ? '' : 'none';
+  });
+  const atMax = blocks.length >= MAX_DEVICE_BLOCKS;
+  const addBtn = document.getElementById('btnAddDevice');
+  addBtn.disabled = atMax;
+  addBtn.style.opacity = atMax ? '0.5' : '1';
+  document.getElementById('deviceLimitHint').textContent = atMax ? `최대 ${MAX_DEVICE_BLOCKS}개까지 입력할 수 있습니다.` : '';
+}
+
+function addDeviceBlockUI(prefill){
+  if(deviceBlockEls().length >= MAX_DEVICE_BLOCKS) return null;
+  const idx = ++deviceBlockSeq;
+  const wrap = document.createElement('div');
+  wrap.className = 'device-block';
+  wrap.dataset.idx = idx;
+  wrap.innerHTML = `
+    <div class="device-block-head">
+      <span class="device-block-title">장비</span>
+      <button type="button" class="device-block-remove">✕ 이 장비 삭제</button>
+    </div>
+    <div class="device-name-row">
+      <div class="field">
+        <label>기기명 (직접 입력)</label>
+        <input type="text" id="f_device_${idx}" placeholder="예: AFIAS-10" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>기기명 (목록에서 선택)</label>
+        <select id="f_deviceSel_${idx}"><option value="">선택</option></select>
+      </div>
+    </div>
+    <div class="form-grid" style="margin-top:10px;">
+      <div class="field">
+        <label>시약명</label>
+        <input type="text" id="f_reagent_${idx}" placeholder="예: CRP" autocomplete="off">
+      </div>
+      <div class="field span2">
+        <label>시약LOT</label>
+        <input type="text" id="f_reagentLot_${idx}" placeholder="LOT 번호">
+      </div>
+      <div class="field span3">
+        <label>접수사항</label>
+        <textarea id="f_request_${idx}" placeholder="문의/컴플레인 접수 내용"></textarea>
+      </div>
+      <div class="field span3">
+        <label>조치사항</label>
+        <textarea id="f_action_${idx}" placeholder="현장 조치 내용"></textarea>
+      </div>
+      <div class="field span3">
+        <label>기타 (특이사항, 현황, 정보)</label>
+        <textarea id="f_etc_${idx}" placeholder="추가 메모"></textarea>
+      </div>
+    </div>`;
+  document.getElementById('deviceBlocks').appendChild(wrap);
+
+  const sel = wrap.querySelector(`#f_deviceSel_${idx}`);
+  const deviceListForSel = (typeof MASTER_DEVICE!=='undefined')?MASTER_DEVICE:LIST_DEVICE;
+  sel.innerHTML = '<option value="">선택</option>' + deviceListForSel.map(v=>`<option>${escapeHtml(v)}</option>`).join('');
+  const deviceInput = wrap.querySelector(`#f_device_${idx}`);
+  sel.addEventListener('change', ()=>{ if(sel.value){ deviceInput.value = sel.value; deviceInput.dispatchEvent(new Event('input',{bubbles:true})); } });
+
+  StrictList.attach(deviceInput, function(){ return (typeof MASTER_DEVICE!=='undefined')?MASTER_DEVICE:[]; });
+  setupAutocomplete(`f_reagent_${idx}`, 'reagent');
+  wrap.querySelectorAll('input:not([type=file]), select').forEach(attachEnterAsTabTo);
+  wrap.querySelector('.device-block-remove').addEventListener('click', ()=>{
+    wrap.remove();
+    updateDeviceBlockUI();
+  });
+
+  if(prefill){
+    deviceInput.value = prefill.device || '';
+    StrictList.validate(deviceInput, function(){ return (typeof MASTER_DEVICE!=='undefined')?MASTER_DEVICE:[]; });
+    wrap.querySelector(`#f_reagent_${idx}`).value = prefill.reagent || '';
+    wrap.querySelector(`#f_reagentLot_${idx}`).value = prefill.reagentLot || '';
+    wrap.querySelector(`#f_request_${idx}`).value = prefill.request || '';
+    wrap.querySelector(`#f_action_${idx}`).value = prefill.action || '';
+    wrap.querySelector(`#f_etc_${idx}`).value = prefill.etc || '';
+  }
+
+  updateDeviceBlockUI();
+  return wrap;
+}
+
+function resetDeviceBlocks(prefill){
+  document.getElementById('deviceBlocks').innerHTML = '';
+  addDeviceBlockUI(prefill);
+}
+
+function readDeviceBlocks(){
+  return deviceBlockEls().map(b=>{
+    const idx = b.dataset.idx;
+    return {
+      device: document.getElementById(`f_device_${idx}`).value.trim(),
+      reagent: document.getElementById(`f_reagent_${idx}`).value.trim(),
+      reagentLot: document.getElementById(`f_reagentLot_${idx}`).value.trim(),
+      request: document.getElementById(`f_request_${idx}`).value.trim(),
+      action: document.getElementById(`f_action_${idx}`).value.trim(),
+      etc: document.getElementById(`f_etc_${idx}`).value.trim(),
+    };
+  });
+}
+
+function setDeviceAddEnabled(enabled){
+  const addBtn = document.getElementById('btnAddDevice');
+  addBtn.style.display = enabled ? '' : 'none';
+}
+
 function renderAllHospitalsList(filterQuery){
   const box = document.getElementById('allHospitalsList');
   const countEl = document.getElementById('allHospitalsCount');
@@ -1040,11 +1226,13 @@ function setSelectWithOther(selectId, boxId, etcId, value, list){
 }
 
 function clearForm(){
-  ['f_manager','f_date','f_hospital','f_region','f_phone','f_requester','f_sn','f_reagentLot','f_request','f_action','f_etc','f_doctorNote',
-   'f_device','f_reagent','f_agency','etc_category'].forEach(id=>document.getElementById(id).value='');
+  ['f_manager','f_date','f_hospital','f_region','f_phone','f_requester','f_sn','f_agency','etc_category'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('f_contact').value='';
   document.getElementById('f_category').value='';
   ['box_category'].forEach(id=>document.getElementById(id).classList.remove('show'));
+  document.getElementById('f_doctorNote').value='';
+  resetDeviceBlocks();
+  setDeviceAddEnabled(true);
   document.getElementById('f_images').value='';
   selectedImageFiles = [];
   existingImageUrls = [];
@@ -1074,13 +1262,9 @@ function enterEditMode(rec){
   document.getElementById('f_requester').value = rec.requester||'';
   document.getElementById('f_agency').value = rec.agency||'';
   setSelectWithOther('f_category','box_category','etc_category', rec.category, LIST_CATEGORY);
-  document.getElementById('f_device').value = rec.device||'';
   document.getElementById('f_sn').value = rec.sn||'';
-  document.getElementById('f_reagent').value = rec.reagent||'';
-  document.getElementById('f_reagentLot').value = rec.reagentLot||'';
-  document.getElementById('f_request').value = rec.request||'';
-  document.getElementById('f_action').value = rec.action||'';
-  document.getElementById('f_etc').value = rec.etc||'';
+  resetDeviceBlocks({ device: rec.device||'', reagent: rec.reagent||'', reagentLot: rec.reagentLot||'', request: rec.request||'', action: rec.action||'', etc: rec.etc||'' });
+  setDeviceAddEnabled(false);
   document.getElementById('f_doctorNote').value = rec.doctorNote||'';
   document.getElementById('f_images').value = '';
   selectedImageFiles = [];
@@ -1123,6 +1307,14 @@ async function saveEntry(){
   }
   document.getElementById('f_date').value = normalizedDate;
 
+  const deviceInputsForCheck = Array.prototype.slice.call(document.querySelectorAll('#deviceBlocks .field input[id^="f_device_"]'));
+  const devicesOk = StrictList.validateAll(deviceInputsForCheck, function(){ return (typeof MASTER_DEVICE!=='undefined')?MASTER_DEVICE:[]; });
+  if(!devicesOk){
+    document.getElementById('saveHint').textContent = '⚠ 기기명은 표준 목록에 있는 이름만 선택할 수 있습니다. 빨갛게 표시된 칸을 확인해주세요.';
+    document.getElementById('saveHint').style.color = '#b5581f';
+    return;
+  }
+
   document.getElementById('btnSave').disabled = true;
   document.getElementById('saveHint').style.color = 'var(--ink-soft)';
 
@@ -1151,25 +1343,27 @@ async function saveEntry(){
     requester: val('f_requester'),
     agency: val('f_agency'),
     category: resolveField('f_category','etc_category'),
-    device: val('f_device'),
     sn: val('f_sn'),
-    reagent: val('f_reagent'),
-    reagentLot: val('f_reagentLot'),
-    request: val('f_request'),
-    action: val('f_action'),
-    etc: val('f_etc'),
     doctorNote: val('f_doctorNote'),
     images: JSON.stringify(imageUrls),
   };
 
+  const deviceRows = readDeviceBlocks();
+  // 빈 블록(장비명·시약·접수/조치/기타 모두 공란)은 건너뜀. 단, 블록이 1개뿐이면 그대로 저장(기존 동작 유지).
+  const rowsToSave = deviceRows.length <= 1 ? deviceRows : deviceRows.filter(d=>d.device||d.reagent||d.reagentLot||d.request||d.action||d.etc);
+  const finalRows = rowsToSave.length ? rowsToSave : [{ device:'', reagent:'', reagentLot:'', request:'', action:'', etc:'' }];
+
   document.getElementById('saveHint').textContent = '저장 중…';
-  let ok;
+  let ok = true;
   if(editingId !== null){
-    const rec = Object.assign({id: editingId, folder: (RECORDS.find(r=>r.id===editingId)||{}).folder||''}, baseRec);
+    const rec = Object.assign({id: editingId, folder: (RECORDS.find(r=>r.id===editingId)||{}).folder||''}, baseRec, finalRows[0]);
     ok = await updateRecord(editingId, rec);
   } else {
-    const rec = Object.assign({id: generateId(), folder: ''}, baseRec);
-    ok = await addRecord(rec);
+    for(let i=0;i<finalRows.length && ok;i++){
+      if(finalRows.length > 1) document.getElementById('saveHint').textContent = `저장 중… (${i+1}/${finalRows.length})`;
+      const rec = Object.assign({id: generateId()+i, folder: ''}, baseRec, finalRows[i]);
+      ok = await addRecord(rec);
+    }
   }
   document.getElementById('btnSave').disabled = false;
 
@@ -1193,11 +1387,13 @@ async function saveEntry(){
 }
 
 function clearFormFieldsOnly(){
-  ['f_manager','f_date','f_hospital','f_region','f_phone','f_requester','f_sn','f_reagentLot','f_request','f_action','f_etc','f_doctorNote',
-   'f_device','f_reagent','f_agency','etc_category'].forEach(id=>document.getElementById(id).value='');
+  ['f_manager','f_date','f_hospital','f_region','f_phone','f_requester','f_sn','f_agency','etc_category'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('f_contact').value='';
   document.getElementById('f_category').value='';
   ['box_category'].forEach(id=>document.getElementById(id).classList.remove('show'));
+  document.getElementById('f_doctorNote').value='';
+  resetDeviceBlocks();
+  setDeviceAddEnabled(true);
   document.getElementById('f_images').value='';
   selectedImageFiles = [];
   existingImageUrls = [];
@@ -1415,15 +1611,16 @@ async function initApp(){
   populateAgencyDatalist();
   setupAutocomplete('f_hospital', 'hospital', 30, autofillRegionPhone);
   setupAutocomplete('f_region', 'region');
-  setupAutocomplete('f_device', 'device');
   document.getElementById('f_hospital').addEventListener('blur', ()=>setTimeout(autofillRegionPhone, 180));
   // 사용자가 지역명/전화번호를 직접 수정하면 자동채움 표시 해제
   document.getElementById('f_region').addEventListener('input', function(){ markManualEdit(this); });
   document.getElementById('f_phone').addEventListener('input', function(){ markManualEdit(this); });
-  setupAutocomplete('f_reagent', 'reagent');
   setupAutocomplete('f_agency', 'agency');
 
   setupEtcToggle('f_category','box_category');
+
+  resetDeviceBlocks();
+  document.getElementById('btnAddDevice').addEventListener('click', ()=>addDeviceBlockUI());
 
   setupTabs();
   setupEnterAsTab();
@@ -1512,5 +1709,21 @@ document.addEventListener('DOMContentLoaded', ()=>{
   showApp();
 });
 </script>
+<div class="modal-overlay" id="unifyModal" onclick="if(event.target===this) closeUnifyModal()" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:1000;padding:24px 14px;overflow-y:auto;align-items:flex-start;justify-content:center;">
+  <div style="background:#fff;border-radius:14px;max-width:760px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+    <div style="display:flex;gap:10px;align-items:flex-start;padding:16px 18px;border-bottom:1px solid var(--line);">
+      <div style="flex:1;min-width:0;">
+        <h3 style="margin:0 0 4px;font-size:16px;">🔧 기기명 이름 통일</h3>
+        <div style="font-size:12.5px;color:var(--ink-soft);">거래처 이력에 저장된 기기명 중 표준 목록(master-list.js)과 대소문자·공백만 다른 값을 찾아 표준 표기로 맞춥니다.</div>
+      </div>
+      <button onclick="closeUnifyModal()" style="border:none;background:none;font-size:18px;cursor:pointer;color:var(--ink-soft);">✕</button>
+    </div>
+    <div id="unifyBody" style="padding:16px 18px;max-height:60vh;overflow:auto;"><div style="color:var(--ink-soft);">검사 중…</div></div>
+    <div style="padding:12px 18px;border-top:1px solid var(--line);display:flex;gap:10px;">
+      <button id="unifyApplyBtn" onclick="applyUnifyPlan()" style="display:none;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer;font-weight:600;">선택한 항목 적용</button>
+      <button onclick="closeUnifyModal()" style="background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer;">닫기</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
