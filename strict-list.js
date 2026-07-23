@@ -73,19 +73,22 @@ var StrictList = (function () {
     opts = opts || {};
     var maxResults = opts.maxResults || 30;
 
-    var field = inputEl.closest ? (inputEl.closest('.field') || inputEl.parentElement) : inputEl.parentElement;
     var list = document.createElement('div');
     list.className = 'sl-list';
-    list.style.cssText = 'position:absolute;z-index:50;background:#fff;border:1px solid #d1d5db;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.12);max-height:220px;overflow:auto;display:none;width:100%;margin-top:2px;font-size:13px;';
-    if (field) {
-      if (getComputedStyle(field).position === 'static') field.style.position = 'relative';
-      field.appendChild(list);
-    }
+    list.style.cssText = 'position:fixed;z-index:9999;background:#fff;border:1px solid #d1d5db;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.12);max-height:220px;overflow:auto;display:none;font-size:13px;';
+    document.body.appendChild(list);
 
     var activeIdx = -1;
 
     function currentOptions() {
       try { return getList() || []; } catch (e) { return []; }
+    }
+
+    function positionList() {
+      var r = inputEl.getBoundingClientRect();
+      list.style.left = r.left + 'px';
+      list.style.top = (r.bottom + 4) + 'px';
+      list.style.width = r.width + 'px';
     }
 
     function render() {
@@ -105,6 +108,7 @@ var StrictList = (function () {
       list.innerHTML = matches.map(function (m, i) {
         return '<div class="sl-item" data-idx="' + i + '" data-val="' + escapeHtml(m) + '" style="padding:7px 10px;cursor:pointer;">' + highlightMatch(m, q) + '</div>';
       }).join('');
+      positionList();
       list.style.display = 'block';
     }
 
@@ -160,6 +164,8 @@ var StrictList = (function () {
       e.preventDefault();
       selectValue(item.getAttribute('data-val'));
     });
+    window.addEventListener('scroll', function () { if (list.style.display === 'block') positionList(); }, true);
+    window.addEventListener('resize', function () { if (list.style.display === 'block') positionList(); });
 
     // 최초 로드시(수정모드로 값이 채워진 경우) 유효성 표시
     markValidity(inputEl, currentOptions());

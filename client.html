@@ -1046,7 +1046,7 @@ function addDeviceBlockUI(prefill){
   sel.addEventListener('change', ()=>{ if(sel.value){ deviceInput.value = sel.value; deviceInput.dispatchEvent(new Event('input',{bubbles:true})); } });
 
   StrictList.attach(deviceInput, function(){ return (typeof MASTER_DEVICE!=='undefined')?MASTER_DEVICE:[]; });
-  setupAutocomplete(`f_reagent_${idx}`, 'reagent');
+  StrictList.attach(wrap.querySelector(`#f_reagent_${idx}`), function(){ return (typeof MASTER_ITEM!=='undefined')?MASTER_ITEM:[]; });
   wrap.querySelectorAll('input:not([type=file]), select').forEach(attachEnterAsTabTo);
   wrap.querySelector('.device-block-remove').addEventListener('click', ()=>{
     wrap.remove();
@@ -1057,6 +1057,7 @@ function addDeviceBlockUI(prefill){
     deviceInput.value = prefill.device || '';
     StrictList.validate(deviceInput, function(){ return (typeof MASTER_DEVICE!=='undefined')?MASTER_DEVICE:[]; });
     wrap.querySelector(`#f_reagent_${idx}`).value = prefill.reagent || '';
+    StrictList.validate(wrap.querySelector(`#f_reagent_${idx}`), function(){ return (typeof MASTER_ITEM!=='undefined')?MASTER_ITEM:[]; });
     wrap.querySelector(`#f_reagentLot_${idx}`).value = prefill.reagentLot || '';
     wrap.querySelector(`#f_request_${idx}`).value = prefill.request || '';
     wrap.querySelector(`#f_action_${idx}`).value = prefill.action || '';
@@ -1309,8 +1310,10 @@ async function saveEntry(){
 
   const deviceInputsForCheck = Array.prototype.slice.call(document.querySelectorAll('#deviceBlocks .field input[id^="f_device_"]'));
   const devicesOk = StrictList.validateAll(deviceInputsForCheck, function(){ return (typeof MASTER_DEVICE!=='undefined')?MASTER_DEVICE:[]; });
-  if(!devicesOk){
-    document.getElementById('saveHint').textContent = '⚠ 기기명은 표준 목록에 있는 이름만 선택할 수 있습니다. 빨갛게 표시된 칸을 확인해주세요.';
+  const reagentInputsForCheck = Array.prototype.slice.call(document.querySelectorAll('#deviceBlocks .field input[id^="f_reagent_"]'));
+  const reagentsOk = StrictList.validateAll(reagentInputsForCheck, function(){ return (typeof MASTER_ITEM!=='undefined')?MASTER_ITEM:[]; });
+  if(!devicesOk || !reagentsOk){
+    document.getElementById('saveHint').textContent = '⚠ 기기명·시약명은 표준 목록에 있는 이름만 선택할 수 있습니다. 빨갛게 표시된 칸을 확인해주세요.';
     document.getElementById('saveHint').style.color = '#b5581f';
     return;
   }
