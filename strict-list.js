@@ -99,12 +99,12 @@ var StrictList = (function () {
       }
       activeIdx = -1;
       if (matches.length === 0) {
-        list.innerHTML = '<div style="padding:8px 10px;color:#9ca3af;">목록에 없는 값입니다 — 새 항목이 필요하면 관리자에게 목록 추가를 요청하세요.</div>';
-      } else {
-        list.innerHTML = matches.map(function (m, i) {
-          return '<div class="sl-item" data-idx="' + i + '" data-val="' + escapeHtml(m) + '" style="padding:7px 10px;cursor:pointer;">' + highlightMatch(m, q) + '</div>';
-        }).join('');
+        hide();
+        return;
       }
+      list.innerHTML = matches.map(function (m, i) {
+        return '<div class="sl-item" data-idx="' + i + '" data-val="' + escapeHtml(m) + '" style="padding:7px 10px;cursor:pointer;">' + highlightMatch(m, q) + '</div>';
+      }).join('');
       list.style.display = 'block';
     }
 

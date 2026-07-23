@@ -173,7 +173,7 @@ body { font-family:'Pretendard',-apple-system,BlinkMacSystemFont,'Segoe UI',sans
   <button class="tab" data-tab="ref">📝 참고사항</button>
   <button class="tab" data-tab="unisearch">🔎 통합검색</button>
   <button class="tab" data-tab="contacts">☎ 대표 소통담당자</button>
-  <button class="tab" data-tab="agencylist">🏪 대리점 리스트</button>
+  <button class="tab" data-tab="agencylist">🏪 대리점 통합(연락처·제품·설치처)</button>
   <button class="tab" data-tab="userlist">🗂 AFIAS 사용자 리스트</button>
 </div>
 
@@ -399,7 +399,7 @@ body { font-family:'Pretendard',-apple-system,BlinkMacSystemFont,'Segoe UI',sans
 
   <!-- 대리점 리스트 -->
   <div class="view" id="view-agencylist">
-    <div class="toolbar"><input id="agencySearch" placeholder="대리점명·영업담당자·취급제품 검색 후 Enter" style="flex:1;"></div>
+    <div class="toolbar"><input id="agencySearch" placeholder="대리점명·영업담당자·담당자·연락처·취급제품·설치 병원명 검색 후 Enter" style="flex:1;"></div>
     <div class="g-sub" id="agencyMeta" style="font-size:11.5px;color:#9ca3af;margin-bottom:8px;"></div>
     <div class="table-scroll"><table class="wk-table" id="agencyTable"></table></div>
   </div>
@@ -1733,16 +1733,61 @@ function renderContacts(){
   }).join('');
   document.getElementById('contactsTable').innerHTML = head+'<tbody>'+(body||'<tr><td class="empty" colspan="6">검색 결과가 없습니다.</td></tr>')+'</tbody>';
 }
+var AGENCY_MERGED = null;
+var agencyDetailOpen = {};
+function normAgency(s){ return String(s==null?'':s).trim().toLowerCase().replace(/\s+/g,''); }
+function buildAgencyMergedRows(){
+  var byAgency = {};
+  function ensure(nameRaw){
+    var n = normAgency(nameRaw);
+    if(!n) return null;
+    if(!byAgency[n]) byAgency[n] = {agency:nameRaw, salesRep:'', type:'', note:'', products:[], contacts:[], sites:[]};
+    return byAgency[n];
+  }
+  EXT_AGENCIES.forEach(function(r){
+    var e = ensure(r.agency); if(!e) return;
+    e.agency = r.agency; e.salesRep = r.salesRep; e.type = r.type; e.note = r.note; e.products = r.products||[];
+  });
+  EXT_CONTACTS.forEach(function(r){
+    var e = ensure(r.agency); if(!e) return;
+    if(!e.salesRep) e.salesRep = r.salesRep;
+    if(!e.type) e.type = r.type;
+    e.contacts.push({name:r.contactName, phone:r.phone, email:r.email});
+  });
+  EXT_USERLIST.forEach(function(r){
+    var e = ensure(r.agency); if(!e) return;
+    e.sites.push({hospital:r.hospital, sido:r.sido, sigungu:r.sigungu, device:r.device, items:r.items, rental:r.rental});
+  });
+  return Object.keys(byAgency).map(function(k){ return byAgency[k]; }).sort(function(a,b){ return String(a.agency||'').localeCompare(String(b.agency||''),'ko'); });
+}
+function toggleAgencyDetail(key){ agencyDetailOpen[key] = !agencyDetailOpen[key]; renderAgencyList(); }
 function renderAgencyList(){
+  if(!AGENCY_MERGED) AGENCY_MERGED = buildAgencyMergedRows();
   var kw = document.getElementById('agencySearch').value.trim();
-  document.getElementById('agencyMeta').textContent = metaLine('agencies')+' · 총 '+EXT_AGENCIES.length+'건';
-  var rows = EXT_AGENCIES.filter(function(r){ return rowMatch([r.agency,r.salesRep,r.type,r.note,(r.products||[]).join(' ')], kw); });
-  var head = '<thead><tr><th>영업담당자</th><th>대리점</th><th>구분</th><th>비고</th><th>취급제품</th></tr></thead>';
+  var rows = AGENCY_MERGED.filter(function(r){
+    return rowMatch([r.agency, r.salesRep, r.type, r.note, (r.products||[]).join(' '),
+      r.contacts.map(function(c){return c.name+' '+c.phone+' '+c.email;}).join(' '),
+      r.sites.map(function(s){return s.hospital+' '+s.device+' '+s.sido;}).join(' ')], kw);
+  });
+  document.getElementById('agencyMeta').textContent = '대표 소통담당자 · 대리점 리스트 · AFIAS 사용자 리스트를 대리점 기준으로 통합 (' + metaLine('agencies') + ') · 총 '+rows.length+'개 대리점 (전체 '+AGENCY_MERGED.length+'개)';
+  var head = '<thead><tr><th>영업담당자</th><th>대리점</th><th>구분</th><th>담당자</th><th>휴대전화</th><th>Email</th><th>취급제품</th><th>AFIAS 설치처</th></tr></thead>';
   var body = rows.map(function(r){
+    var key = normAgency(r.agency);
     var prod = (r.products||[]).map(function(p){ return '<span class="tag">'+esc(p)+'</span>'; }).join(' ');
-    return '<tr><td>'+esc(r.salesRep)+'</td><td>'+esc(r.agency)+'</td><td>'+esc(r.type)+'</td><td>'+esc(r.note)+'</td><td>'+prod+'</td></tr>';
+    var contactName = r.contacts.map(function(c){return c.name;}).filter(Boolean).join(', ');
+    var contactPhone = r.contacts.map(function(c){return c.phone;}).filter(Boolean).join(', ');
+    var contactEmail = r.contacts.map(function(c){return c.email;}).filter(Boolean).join(', ');
+    var siteCount = r.sites.length;
+    var openBtn = siteCount ? ('<button type="button" class="btn btn-ghost" style="padding:3px 8px;font-size:11.5px;" onclick="toggleAgencyDetail(\''+key+'\')">'+(agencyDetailOpen[key]?'▲ 접기':'▼ '+siteCount+'건')+'</button>') : '<span style="color:#9ca3af;">-</span>';
+    var mainRow = '<tr><td>'+esc(r.salesRep)+'</td><td style="font-weight:700;">'+esc(r.agency)+'</td><td>'+esc(r.type)+'</td><td>'+esc(contactName)+'</td><td>'+esc(contactPhone)+'</td><td>'+esc(contactEmail)+'</td><td>'+prod+'</td><td>'+openBtn+'</td></tr>';
+    var detailRow = '';
+    if(agencyDetailOpen[key] && siteCount){
+      var siteRows = r.sites.map(function(s){ return '<tr><td>'+esc(s.sido)+' '+esc(s.sigungu)+'</td><td>'+esc(s.hospital)+'</td><td>'+esc(s.device)+'</td><td>'+esc(s.rental)+'</td></tr>'; }).join('');
+      detailRow = '<tr><td colspan="8" style="background:#f9fafb;padding:10px;"><table class="wk-table"><thead><tr><th>지역</th><th>의료기관명</th><th>장비</th><th>임대여부</th></tr></thead><tbody>'+siteRows+'</tbody></table></td></tr>';
+    }
+    return mainRow+detailRow;
   }).join('');
-  document.getElementById('agencyTable').innerHTML = head+'<tbody>'+(body||'<tr><td class="empty" colspan="5">검색 결과가 없습니다.</td></tr>')+'</tbody>';
+  document.getElementById('agencyTable').innerHTML = head+'<tbody>'+(body||'<tr><td class="empty" colspan="8">검색 결과가 없습니다.</td></tr>')+'</tbody>';
 }
 function renderUserlist(){
   var kw = document.getElementById('userlistSearch').value.trim();
