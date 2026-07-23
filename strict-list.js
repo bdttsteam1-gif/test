@@ -73,22 +73,20 @@ var StrictList = (function () {
     opts = opts || {};
     var maxResults = opts.maxResults || 30;
 
+    // 드롭다운을 화면에 떠있게(absolute/fixed) 만들지 않고, 입력칸 바로 다음에 "정상적인 문서 흐름"으로
+    // 삽입합니다. 다른 칸을 가리는 문제가 레이아웃에 따라 재발하지 않도록 하기 위한 선택입니다.
+    // (목록이 열리면 아래 내용이 살짝 밀려 내려가고, 닫히면 다시 원래 자리로 돌아옵니다.)
     var list = document.createElement('div');
     list.className = 'sl-list';
-    list.style.cssText = 'position:fixed;z-index:9999;background:#fff;border:1px solid #d1d5db;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.12);max-height:220px;overflow:auto;display:none;font-size:13px;';
-    document.body.appendChild(list);
+    list.style.cssText = 'background:#fff;border:1px solid #d1d5db;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.08);max-height:180px;overflow:auto;display:none;font-size:13px;margin:4px 0 2px;';
+    if (inputEl.parentNode) {
+      inputEl.parentNode.insertBefore(list, inputEl.nextSibling);
+    }
 
     var activeIdx = -1;
 
     function currentOptions() {
       try { return getList() || []; } catch (e) { return []; }
-    }
-
-    function positionList() {
-      var r = inputEl.getBoundingClientRect();
-      list.style.left = r.left + 'px';
-      list.style.top = (r.bottom + 4) + 'px';
-      list.style.width = r.width + 'px';
     }
 
     function render() {
@@ -108,7 +106,6 @@ var StrictList = (function () {
       list.innerHTML = matches.map(function (m, i) {
         return '<div class="sl-item" data-idx="' + i + '" data-val="' + escapeHtml(m) + '" style="padding:7px 10px;cursor:pointer;">' + highlightMatch(m, q) + '</div>';
       }).join('');
-      positionList();
       list.style.display = 'block';
     }
 
@@ -164,8 +161,6 @@ var StrictList = (function () {
       e.preventDefault();
       selectValue(item.getAttribute('data-val'));
     });
-    window.addEventListener('scroll', function () { if (list.style.display === 'block') positionList(); }, true);
-    window.addEventListener('resize', function () { if (list.style.display === 'block') positionList(); });
 
     // 최초 로드시(수정모드로 값이 채워진 경우) 유효성 표시
     markValidity(inputEl, currentOptions());
